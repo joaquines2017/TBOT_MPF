@@ -1,0 +1,47 @@
+{
+  "name": "base-bailey-json",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node ./dist/app.js",
+    "lint": "eslint . --no-ignore",
+    "dev": "npm run lint && nodemon ./src/app.ts",
+    "build": "npx rollup -c"
+  },
+  "keywords": [],
+  "dependencies": {
+    "@builderbot/bot": "1.2.6",
+    "@builderbot/database-postgres": "1.2.6",
+    "@builderbot/provider-baileys": "1.2.6",
+    "@whiskeysockets/baileys": "^6.7.16",
+    "chalk": "^5.4.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "jimp": "^1.6.0",
+    "node-fetch": "^3.3.2",
+    "qrcode-terminal": "^0.12.0",
+    "sequelize": "^6.37.7",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@types/node": "^20.11.30",
+    "@types/node-fetch": "^2.6.12",
+    "@types/sequelize": "^4.28.20",
+    "@typescript-eslint/eslint-plugin": "^7.2.0",
+    "@typescript-eslint/parser": "^7.4.0",
+    "eslint": "^8.52.0",
+    "eslint-plugin-builderbot": "latest",
+    "nodemon": "^3.1.0",
+    "rollup": "^4.44.2",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.3"
+  },
+  "author": "",
+  "license": "ISC"
+}

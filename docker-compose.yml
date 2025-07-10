@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: pg_tbot
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: Kdmf8394
+      POSTGRES_DB: db_botpress
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tbot_net
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    ports:
+      - "8080:80"
+      - "8443:443"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: proyectteamgpt@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: abc123
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - tbot_net
+
+  botpress:
+    image: botpress/server:latest
+    container_name: botpress
+    ports:
+      - "3000:3000"
+    environment:
+      POSTGRES_ENABLED: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: Kdmf8394
+      POSTGRES_DB: db_botpress
+      DATABASE_URL: postgres://admin:Kdmf8394@postgres:5432/db_botpress
+      BP_PRODUCTION: "true"
+      EXTERNAL_URL: http://localhost:3000
+      LOGS.FILEOUTPUT.ENABLED: "true"
+      BPFS_STORAGE: database
+      BP_ADMIN_PASSWORD: Kdmf8394
+    volumes:
+      - botpress_data:/botpress/data
+      - ./botpress.config.json:/botpress/data/global/botpress.config.json
+    depends_on:
+      - postgres
+    networks:
+      - tbot_net
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  botpress_data:
+  ./botpress.config.json:
+
+networks:
+  tbot_net:
+    driver: bridge
