@@ -29,7 +29,6 @@ T-BOT es un asistente virtual para WhatsApp que permite gestionar tickets de sop
 - 🔍 Consulta de tickets
 - ❌ Cancelación de tickets
 - 📋 Listado de tickets
-- 🔄 Reapertura de tickets
 
 ## Tecnologías
 - Node.js
@@ -88,7 +87,9 @@ REDMINE_API_KEY=tu-api-key
    - Flujo conversacional inteligente
 
 ## 👥 Equipo
-- [Nombres de los desarrolladores]
+- [Joaquín Juárez]
+- [Gustavo Salva]
+- [José Ruiz]
 
 ## 📄 Licencia
 [Tipo de licencia]
