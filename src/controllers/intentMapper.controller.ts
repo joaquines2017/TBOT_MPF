@@ -49,11 +49,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
       if (mensajeLimpio === '4' || mensajeLimpio.includes('ver')) {
         return 'ver_todos'
       }
-      if (mensajeLimpio === '5' || mensajeLimpio.includes('reabrir')) {
-        session.estado[senderId] = 'esperando_id_reabrir'
-        return 'reabrir_ticket'
-      }
-      if (mensajeLimpio === '6' || mensajeLimpio.includes('ayuda')) {
+      if (mensajeLimpio === '5' || mensajeLimpio.includes('ayuda')) {
         return 'ayuda'
       }
       return mensajeLimpio // Default return for nodo_saludo
