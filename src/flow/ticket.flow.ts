@@ -74,7 +74,11 @@ const cancelarTicket = async (ticketId: number): Promise<string> => {
 
   return `✅ El ticket #${ticketId} ha sido rechazado exitosamente.
 📊 Estado: Rechazado
-🤖 T-BOT ha finalizado la conversación.`
+📝 Por favor, calificá la atención:
+1️⃣ Mala
+2️⃣ Buena
+3️⃣ Muy Buena
+4️⃣ Excelente`
 }
 
 const crearTicket = async (_senderId: string, contexto: any) => {
@@ -136,6 +140,93 @@ const crearTicket = async (_senderId: string, contexto: any) => {
 }
 
 export const handleTicketFlow = async (_senderId: string, intent: string, contexto: any): Promise<string> => {
+
+    // --- Lógica restaurada para navegación y filtrado de tickets ---
+    // 1. Si el estado es mostrando_tickets, procesar selección de estado
+    if (session.estado[_senderId] === 'mostrando_tickets' || (contexto?.ultimoMensaje && contexto.ultimoMensaje.includes('Elija el estado de los tickets'))) {
+      let intentNorm = intent;
+      if (typeof intentNorm !== 'string') intentNorm = String(intentNorm);
+      intentNorm = intentNorm.trim().toLowerCase();
+      console.log('🟡 [DEBUG] intent recibido en mostrando_tickets:', intent, '| Normalizado:', intentNorm);
+      // Si el usuario envía 3=Salir en mostrando_tickets, despedir y finalizar
+      if (intentNorm === '3' || intentNorm === 'salir') {
+        session.conversacionFinalizada[_senderId] = true;
+        const despedida = '🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.';
+        setTimeout(() => limpiarEstado(_senderId), 100);
+        return despedida;
+      }
+      // Mapear variantes de intent a estado Redmine
+      let estadoRedmine = '';
+      if (intentNorm === '1' || intentNorm === 'nuevo') {
+        estadoRedmine = 'Nueva';
+      } else if (intentNorm === '2' || intentNorm === 'en curso' || intentNorm === 'en_proceso' || intentNorm === 'en proceso') {
+        estadoRedmine = 'En curso';
+      }
+      if (estadoRedmine) {
+        const contacto = await RedmineService.buscarContactoPorTelefono(_senderId);
+        if (!contacto || !contacto.id) {
+          session.estado[_senderId] = 'nodo_saludo';
+          return 'No se encontró tu contacto en la base de Redmine. No se pueden filtrar tus tickets.';
+        }
+        // Guardar estado y página actual para paginación
+        session.estado[_senderId] = 'paginando_tickets';
+        session.contexto[_senderId].estadoRedmine = estadoRedmine;
+        session.contexto[_senderId].contact_id = contacto.id;
+        session.paginaActual[_senderId] = 1;
+        return await manejarPaginacionEstado(_senderId, 1, estadoRedmine, contacto.id);
+      } else {
+        // Si el intent no es válido, mostrar el menú de selección de estado
+        session.estado[_senderId] = 'mostrando_tickets';
+        return '📋 Elijaaaaa el estado de los tickets que desea ver:\n1️⃣ Nuevo\n2️⃣ En curso';
+      }
+    }
+
+    // 2. Si el estado es paginando_tickets, procesar navegación
+    if (session.estado[_senderId] === 'paginando_tickets') {
+      const estadoRedmine = session.contexto[_senderId]?.estadoRedmine;
+      const contactId = session.contexto[_senderId]?.contact_id;
+      let pagina = session.paginaActual[_senderId] || 1;
+      if (intent === '3') {
+        console.log('🚫 Capturado salir en flujo de tickets, NO se envía a Botpress. Estado:', session.estado[_senderId]);
+        session.conversacionFinalizada[_senderId] = true;
+        // Enviar el mensaje de despedida ANTES de limpiar el estado para que el mensaje llegue correctamente
+        const despedida = '🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.';
+        setTimeout(() => limpiarEstado(_senderId), 100); // Limpia el estado después de enviar el mensaje
+        return despedida;
+      } else if (intent === '4') {
+        pagina++;
+        session.paginaActual[_senderId] = pagina;
+        let contact_id = contactId;
+        if (!contact_id) {
+          const contacto = await RedmineService.buscarContactoPorTelefono(_senderId);
+          contact_id = contacto?.id;
+          session.contexto[_senderId].contact_id = contact_id;
+        }
+        return await manejarPaginacionEstado(_senderId, pagina, estadoRedmine, contact_id);
+      } else if (intent === '5') {
+        pagina = Math.max(1, pagina - 1);
+        session.paginaActual[_senderId] = pagina;
+        let contact_id = contactId;
+        if (!contact_id) {
+          const contacto = await RedmineService.buscarContactoPorTelefono(_senderId);
+          contact_id = contacto?.id;
+          session.contexto[_senderId].contact_id = contact_id;
+        }
+        return await manejarPaginacionEstado(_senderId, pagina, estadoRedmine, contact_id);
+      } else {
+        // Si la opción no es válida, mostrar menú
+        return 'Opción no válida. Por favor, elige una opción del menú.\n\nOpciones:\n3️⃣ Salir\n4️⃣ Siguiente\n5️⃣ Anterior';
+      }
+    }
+
+    // Guardar calificación y finalizar conversación tras ver todos/salir
+    if (/^[1-4]$/.test(intent) && session.estado[_senderId] === 'esperando_calificacion_tickets') {
+      await RedmineService.guardarCalificacion(null, intent); // null porque no hay ticket específico
+      session.conversacionFinalizada[_senderId] = true;
+      limpiarEstado(_senderId);
+      return '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.';
+    }
+
   try {
     console.log('🎯 handleTicketFlow iniciado con:', { intent, senderId: _senderId, estado: session.estado[_senderId], contexto })
 
@@ -169,45 +260,49 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
 
     // Manejo de calificación
     if (/^[1-4]$/.test(intent) && session.estado[_senderId] === 'esperando_calificacion') {
-      const ticketId = session.contexto[_senderId].ticketConsultado
-      await RedmineService.guardarCalificacion(ticketId, intent)
-      
-      session.conversacionFinalizada[_senderId] = true
-      return '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.'
+      const ticketId = session.contexto[_senderId]?.ticketConsultado;
+      await RedmineService.guardarCalificacion(ticketId, intent);
+      session.conversacionFinalizada[_senderId] = true;
+      limpiarEstado(_senderId);
+      return '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.';
     }
 
     // Manejar cancelación de ticket
     if (intent.startsWith('cancelar_')) {
-      const ticketId = parseInt(intent.replace('cancelar_', ''))
+      const ticketId = parseInt(intent.replace('cancelar_', ''));
       if (!ticketId || isNaN(ticketId)) {
-        return '⚠️ Número de ticket inválido. Por favor, ingresá solo números.'
+        return '⚠️ Número de ticket inválido. Por favor, ingresá solo números.';
       }
 
       try {
-        const respuesta = await cancelarTicket(ticketId)
-        session.conversacionFinalizada[_senderId] = true
-        return respuesta
+        const respuesta = await cancelarTicket(ticketId);
+        // Después de cancelar, pedir calificación
+        session.estado[_senderId] = 'esperando_calificacion';
+        session.contexto[_senderId] = { ticketConsultado: ticketId };
+        return respuesta;
       } catch (error) {
-        return `❌ ${error.message}`
+        return `❌ ${error.message}`;
       }
     }
 
     // Procesar número de ticket para cancelar
     if (session.estado[_senderId] === 'esperando_id_cancelar' && /^\d+$/.test(intent)) {
-      const ticketId = parseInt(intent)
+      const ticketId = parseInt(intent);
       try {
-        const respuesta = await cancelarTicket(ticketId)
-        session.conversacionFinalizada[_senderId] = true
-        return respuesta
+        const respuesta = await cancelarTicket(ticketId);
+        // Después de cancelar, pedir calificación
+        session.estado[_senderId] = 'esperando_calificacion';
+        session.contexto[_senderId] = { ticketConsultado: ticketId };
+        return respuesta;
       } catch (error) {
-        return `⚠️ ${error.message}`
+        return `⚠️ ${error.message}`;
       }
     }
 
     // Manejar consulta de ticket
     if (intent === 'consultar') {
       session.estado[_senderId] = 'esperando_id_consulta'
-      return '🔍 Por favor, ingresá el número de ticket que querés consultar:'
+      return '🔍Por favor, ingresá el número de ticket que querés consultar:'
     }
 
     // Procesar número de ticket cuando estamos esperándolo
@@ -314,28 +409,24 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
       
       return `❌ ${resultado.message || 'No se pudo rechazar el ticket.'}`
     } else if (intent === 'ver_todos') {
-      const pagina = session.paginaActual[_senderId] || 1
-      const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', pagina)
-      
-      session.paginaActual[_senderId] = pagina
-      session.estado[_senderId] = 'mostrando_tickets'
-      
-      return `${resultado.mensaje}\n${resultado.hayMasPaginas ? 
-        '\n➡️ Escribí "siguiente" para ver más tickets\n⬅️ Escribí "anterior" para ver tickets previos' : 
-        '\n✅ No hay más tickets para mostrar'}`
+      // Al mostrar el menú de estados, actualiza el estado a 'mostrando_tickets'
+      session.estado[_senderId] = 'mostrando_tickets';
+      // Mostrar solo el menú de selección de estado
+      return '📋 Elija el estado de los tickets que desea ver:\n1️⃣ Nuevo\n2️⃣ En curso';
     } else if (intent === 'siguiente' && session.estado[_senderId] === 'mostrando_tickets') {
-      const pagina = (session.paginaActual[_senderId] || 1) + 1
-      return await manejarPaginacion(_senderId, pagina)
+      const pagina = (session.paginaActual[_senderId] || 1) + 1;
+      return await manejarPaginacionGeneral(_senderId, pagina);
     } else if (intent === 'anterior' && session.estado[_senderId] === 'mostrando_tickets') {
-      const pagina = Math.max(1, (session.paginaActual[_senderId] || 2) - 1)
-      return await manejarPaginacion(_senderId, pagina)
+      const pagina = Math.max(1, (session.paginaActual[_senderId] || 2) - 1);
+      return await manejarPaginacionGeneral(_senderId, pagina);
     } else if (intent === 'cancelar' && !contexto.confirmado) {
       session.estado[_senderId] = 'esperando_confirmacion_cancelar'
       session.contexto[_senderId] = { ...contexto, ticketId: contexto.ticketId }
       return '⚠️ ¿Estás seguro de que querés cancelar este ticket? (si/no)'
     }
 
-    return '⚠️ Operación no reconocida'
+    // Si el intent no fue válido en los contextos anteriores, mostrar opción no válida genérica
+    return 'Opción no válida. Por favor, elige una opción del menú.'
 
   } catch (error) {
     console.error('❌ Error en handleTicketFlow:', error)
@@ -345,13 +436,112 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
   }
 }
 
-const manejarPaginacion = async (_senderId: string, pagina: number): Promise<string> => {
-  const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', pagina)
-  session.paginaActual[_senderId] = pagina
-  
-  return `${resultado.mensaje}\n${resultado.hayMasPaginas ? 
-    '\n➡️ Escribí "siguiente" para ver más tickets\n⬅️ Escribí "anterior" para ver tickets previos' : 
-    '\n✅ No hay más tickets para mostrar'}`
+// Paginación para tickets filtrados por estado
+const manejarPaginacionEstado = async (_senderId: string, pagina: number, estadoRedmine: string, contactId: number): Promise<string> => {
+  const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', pagina, {
+    status_name: estadoRedmine,
+    contact_id: contactId
+  });
+  session.paginaActual[_senderId] = pagina;
+
+  // Log para depuración: mostrar estados y contactos
+  const ticketsRaw = resultado.tickets || resultado.issues || resultado.data || [];
+  console.log('🔎 Tickets recibidos:', ticketsRaw.map(t => ({id: t.id, estado: t.status?.name, contact: t.contact?.id, author: t.author?.id})));
+
+  // Mejorar filtro: aceptar variantes de estado
+  const estadoVariantes = {
+    'nueva': ['nueva', 'nuevo'],
+    'en curso': ['en curso', 'en proceso']
+  };
+  const estadoBuscado = estadoRedmine.trim().toLowerCase();
+  const variantes = estadoVariantes[estadoBuscado] || [estadoBuscado];
+
+  // Filtrar por estado (aceptando variantes) y número de contacto (senderId)
+  const senderIdNum = _senderId.replace(/[^\d]/g, '');
+  const tickets = ticketsRaw.filter(t => {
+    const estadoTicket = t.status?.name?.trim().toLowerCase();
+    const celularField = t.custom_fields?.find(f => f.value && f.value.replace(/[^\d]/g, '') === senderIdNum);
+    return (
+      estadoTicket && variantes.includes(estadoTicket) &&
+      celularField
+    );
+  });
+
+  let ticketsFormateados = '';
+  if (Array.isArray(tickets) && tickets.length > 0) {
+    ticketsFormateados = tickets.map(t =>
+      `🎫 Ticket ID: ${t.id}\n✏️ Asunto: ${t.subject}\n👤 Técnico: ${t.assigned_to?.name || 'Sin asignar'}\n📊 ${t.status?.name || 'Sin estado'}\n`
+    ).join('\n');
+  } else {
+    ticketsFormateados = 'No se encontraron tickets en esta página.';
+  }
+
+  // Opciones de navegación (actualizada: 3=Salir, 4=Siguiente, 5=Anterior)
+  let opciones = '\nOpciones:';
+  const ticketsPorPagina = 5;
+  const hayMasPaginas = tickets.length > ticketsPorPagina;
+  if (pagina === 1 && hayMasPaginas) {
+    opciones += '\n3️⃣ Salir\n4️⃣ Siguiente';
+  } else if (pagina > 1 && hayMasPaginas) {
+    opciones += '\n3️⃣ Salir\n4️⃣ Siguiente\n5️⃣ Anterior';
+  } else if (pagina > 1 && !hayMasPaginas) {
+    opciones += '\n3️⃣ Salir\n5️⃣ Anterior';
+  } else {
+    opciones += '\n3️⃣ Salir';
+  }
+
+  // Mensaje de calificación al finalizar
+  let calificacion = '';
+  if (!resultado.hayMasPaginas && tickets.length === 0 && pagina > 1) {
+    calificacion = '\n\n📝 ¿Cómo calificarías la atención?\n1️⃣ Mala\n2️⃣ Buena\n3️⃣ Muy Buena\n4️⃣ Excelente';
+  }
+
+  return `📋 Estos son tus tickets con estado "${estadoRedmine}":\n${ticketsFormateados}\n${opciones}${calificacion}`;
+}
+
+// Paginación para tickets generales (sin filtro de estado)
+const manejarPaginacionGeneral = async (_senderId: string, pagina: number): Promise<string> => {
+  const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', pagina);
+  session.paginaActual[_senderId] = pagina;
+
+  // Formatear cada ticket
+  const tickets = resultado.tickets || resultado.issues || resultado.data || [];
+  let ticketsFormateados = '';
+  if (Array.isArray(tickets) && tickets.length > 0) {
+    ticketsFormateados = tickets.map(t =>
+      `🎫 Ticket ID: ${t.id}\n✏️ Asunto: ${t.subject}\n👤 Técnico: ${t.author?.name || t.contact?.name || 'Sin usuario'}\n📊 ${t.status?.name || 'Sin estado'}\n`
+    ).join('\n');
+  } else {
+    ticketsFormateados = 'No se encontraron tickets en esta página.';
+  }
+
+  // Opciones de navegación (nueva numeración)
+  let opciones = '\nOpciones:';
+  const ticketsPorPagina = 5;
+  const hayMasPaginas = tickets.length > ticketsPorPagina;
+  if (pagina === 1 && hayMasPaginas) {
+    opciones += '\n1️⃣ Salir\n2️⃣ Siguiente';
+  } else if (pagina > 1 && hayMasPaginas) {
+    opciones += '\n1️⃣ Salir\n2️⃣ Siguiente\n3️⃣ Anterior';
+  } else if (pagina > 1 && !hayMasPaginas) {
+    opciones += '\n1️⃣ Salir\n3️⃣ Anterior';
+  } else {
+    opciones += '\n1️⃣ Salir';
+  }
+
+  // Menú de selección de estado solo en la primera página
+  let menuEstados = '';
+  if (pagina === 1) {
+    menuEstados = '\n\n📋 Filtrar por estado:\n1️⃣ Nuevo\n2️⃣ En curso';
+  }
+
+  // Mensaje de calificación al finalizar
+  let calificacion = '';
+  if (!resultado.hayMasPaginas && (!resultado.tickets || resultado.tickets.length === 0 || pagina > 1)) {
+    calificacion = '\n\n📝 ¿Cómo calificarías la atención?\n1️⃣ Mala\n2️⃣ Buena\n3️⃣ Muy Buena\n4️⃣ Excelente';
+  }
+
+  return `📋 Tickets encontrados:\n${ticketsFormateados}\n${opciones}${menuEstados}${calificacion}`;
 }
 
 

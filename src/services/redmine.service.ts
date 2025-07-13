@@ -35,8 +35,8 @@ import chalk from 'chalk'
 function getApi() {
   let baseURL = process.env.REDMINE_URL || '';
   const apiKey = process.env.REDMINE_API_KEY || '';
-  console.log('DEBUG Redmine baseURL:', baseURL);
-  console.log('DEBUG Redmine apiKey:', apiKey);
+  //console.log('DEBUG Redmine baseURL:', baseURL);
+  //console.log('DEBUG Redmine apiKey:', apiKey);
   if (!baseURL.endsWith('/')) baseURL += '/';
   try {
     new URL(baseURL);
@@ -202,23 +202,24 @@ const RedmineService = {
           ...filtros
         }
       })
-      const issues = response.data.issues || []
-      const total = response.data.total_count
-      const totalPaginas = Math.ceil(total / 5)
+      const issues = response.data.issues || [];
+      const total = response.data.total_count;
+      const totalPaginas = Math.ceil(total / 5);
       const ticketsFormateados = issues.map((ticket: any) => `
         🎫 #${ticket.id} - ${ticket.subject}
         👤 ${ticket.assigned_to?.name || 'Sin asignar'}
         📊 ${ticket.status?.name || 'Estado desconocido'}
-      `).join('\n')
+      `).join('\n');
       return {
         mensaje: `📋 Tickets (${pagina}/${totalPaginas}):\n${ticketsFormateados}`,
         hayMasPaginas: pagina < totalPaginas,
         paginaActual: pagina,
-        total
-      }
+        total,
+        tickets: issues // <-- Aquí se expone el array de tickets
+      };
     } catch (error) {
-      console.error('❌ Error al listar tickets:', error)
-      throw error
+      console.error('❌ Error al listar tickets:', error);
+      throw error;
     }
   },
 

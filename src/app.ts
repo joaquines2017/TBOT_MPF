@@ -123,7 +123,17 @@ const main = async () => {
       const mensajeTexto = ctx.body.trim().toLowerCase()
 
       try {
-        // Verificar si es un nuevo usuario y enviar saludo
+        // 1. Calificación siempre primero: BuilderBot debe capturarla antes que cualquier otro flujo
+        if (session.estado[senderId] === 'esperando_calificacion') {
+          const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, session.contexto[senderId] || {})
+          await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
+          if (session.conversacionFinalizada[senderId]) {
+            limpiarEstado(senderId)
+          }
+          return
+        }
+
+        // 2. Saludo a nuevo usuario
         if (!session.contexto[senderId]?.saludoEnviado && !session.contexto[senderId]?.saludoEnProceso) {
           if (!session.contexto[senderId]) session.contexto[senderId] = {}
           session.contexto[senderId].saludoEnProceso = true
@@ -132,7 +142,7 @@ const main = async () => {
           console.log('Mensaje recibido:', mensajeTexto)
 
           const respuestaBot = await BotpressService.enviarMensaje(senderId, mensajeTexto)
-          console.log('🔄 Respuesta de Botpress para saludo:', respuestaBot)
+          //console.log('🔄 Respuesta de Botpress para saludo:', respuestaBot)
 
           if (respuestaBot?.responses?.length > 0) {
             await sendMessageSafely(adapterProvider, senderId, respuestaBot.responses[0].text)
@@ -148,30 +158,7 @@ const main = async () => {
           return
         }
 
-        if (session.estado[senderId] === 'esperando_calificacion') {
-          if (/^[1-4]$/.test(mensajeTexto)) {
-            const ticketId = session.contexto[senderId].ticketConsultado
-            await RedmineService.guardarCalificacion(ticketId, mensajeTexto)
-
-            await sendMessageSafely(
-              adapterProvider, 
-              senderId, 
-              '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.'
-            )
-
-            session.conversacionFinalizada[senderId] = true
-            limpiarEstado(senderId)
-            return
-          } else {
-            await sendMessageSafely(
-              adapterProvider,
-              senderId,
-              'Por favor, ingresá un número del 1 al 4 para calificar la atención.'
-            )
-            return
-          }
-        }
-
+        // 3. Cancelar ticket
         if (session.estado[senderId] === 'esperando_id_cancelar' && /^\d+$/.test(mensajeTexto)) {
           const respuestaTicket = await handleTicketFlow(senderId, `cancelar_${mensajeTexto}`, {})
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
@@ -181,6 +168,7 @@ const main = async () => {
           return
         }
 
+        // 4. Consultar ticket
         if (session.estado[senderId] === 'esperando_id_consulta' && /^\d+$/.test(mensajeTexto)) {
           const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, {})
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
@@ -190,6 +178,7 @@ const main = async () => {
           return
         }
 
+        // 5. Confirmar generación de ticket
         if ((mensajeTexto === 'si' || mensajeTexto === '1') && 
             session.contexto[senderId]?.ultimoMensaje?.includes('¿Deseás generar el ticket?')) {
           const respuestaTicket = await handleTicketFlow(senderId, 'si', session.contexto[senderId])
@@ -201,9 +190,67 @@ const main = async () => {
           }
           return
         }
-      
-        const mensajeTransformado = handleIncomingMessage(mensajeTexto, senderId)
-        console.log('🔄 Mensaje transformado:', { original: mensajeTexto, transformado: mensajeTransformado })
+
+
+      // 6. Procesamiento normal: mapping de intents y Botpress
+      // Si el usuario responde '3' en los estados de tickets, BuilderBot debe capturar y NO pasar a Botpress
+      if ((mensajeTexto === '3') && (session.estado[senderId] === 'mostrando_tickets' || session.estado[senderId] === 'paginando_tickets')) {
+        console.log('🚫 [DEBUG] Opción 3=Salir capturada por BuilderBot. Estado:', session.estado[senderId]);
+        const respuestaTicket = await handleTicketFlow(senderId, '3', session.contexto[senderId] || {});
+        await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
+        if (session.conversacionFinalizada[senderId]) {
+          limpiarEstado(senderId);
+        }
+        return;
+      }
+
+      // Si el último mensaje fue el menú de estados y el usuario responde '1' o '2', BuilderBot captura SIEMPRE y NO pasa a Botpress
+      if (session.contexto[senderId]?.ultimoMensaje?.includes('Elija el estado de los tickets') && (mensajeTexto === '1' || mensajeTexto === '2')) {
+        const intentEstado = mensajeTexto === '1' ? 'nuevo' : 'en_proceso';
+        console.log('🔄 Capturado por BuilderBot:', { original: mensajeTexto, transformado: intentEstado });
+        const respuestaTicket = await handleTicketFlow(senderId, intentEstado, session.contexto[senderId] || {});
+        await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
+        if (session.conversacionFinalizada[senderId]) {
+          limpiarEstado(senderId);
+        }
+        return;
+      }
+
+      // Procesos normales de BuilderBot
+      // [DEBUG] Estado antes de transformar mensaje
+      console.log('🟡 [DEBUG] Estado actual:', {
+        estado: session.estado[senderId],
+        mensajeLimpio: mensajeTexto,
+        contexto: session.contexto[senderId],
+        conversacionFinalizada: session.conversacionFinalizada[senderId]
+      });
+
+      // Si el usuario responde '3' en los estados de tickets, NO transformar ni enviar a Botpress
+      if ((mensajeTexto === '3') && (session.estado[senderId] === 'mostrando_tickets' || session.estado[senderId] === 'paginando_tickets')) {
+        console.log('🚫 [DEBUG] Opción 3=Salir capturada por BuilderBot antes de transformar. Estado:', session.estado[senderId]);
+        const respuestaTicket = await handleTicketFlow(senderId, '3', session.contexto[senderId] || {});
+        await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
+        if (session.conversacionFinalizada[senderId]) {
+          limpiarEstado(senderId);
+        }
+        return;
+      }
+
+      const mensajeTransformado = handleIncomingMessage(mensajeTexto, senderId);
+      const intentFinal = mensajeTransformado;
+      console.log('🔄 Mensaje transformado:', { original: mensajeTexto, transformado: intentFinal });
+
+      if (
+        (intentFinal === 'siguiente' && session.estado[senderId] === 'mostrando_tickets') ||
+        (intentFinal === 'salir' && session.estado[senderId] === 'mostrando_tickets')
+      ) {
+        const respuestaTicket = await handleTicketFlow(senderId, intentFinal, session.contexto[senderId] || {});
+        await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
+        if (session.conversacionFinalizada[senderId]) {
+          limpiarEstado(senderId);
+        }
+        return;
+      }
 
         if (session.estado[senderId] === 'nodo_confirmar_envio' && mensajeTransformado === 'si') {
           const respuestaTicket = await handleTicketFlow(senderId, mensajeTransformado, session.contexto[senderId])

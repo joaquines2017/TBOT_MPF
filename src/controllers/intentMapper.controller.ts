@@ -46,7 +46,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
         session.estado[senderId] = 'esperando_id_cancelar'
         return 'rechazar ticket'
       }
-      if (mensajeLimpio === '4' || mensajeLimpio.includes('ver')) {
+      if (mensajeLimpio === '4' || mensajeLimpio.includes('ver todos')) {
         return 'ver_todos'
       }
       if (mensajeLimpio === '5' || mensajeLimpio.includes('ayuda')) {
@@ -68,9 +68,9 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
         session.estado[senderId] = 'subcat_telefonoip'
         return 'problema teléfono ip'
       }
-      if (mensajeLimpio === '4' || mensajeLimpio.includes('cámara')) {
+      if (mensajeLimpio === '4' || mensajeLimpio.includes('Internet')) {
         session.estado[senderId] = 'subcat_camara'
-        return 'problema cámara'
+        return 'problema Internet'
       }
       if (mensajeLimpio === '5' || mensajeLimpio.includes('audiencia')) {
         session.estado[senderId] = 'subcat_audiencia'
@@ -85,7 +85,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
 
     // Subcategorías de impresora
     case 'subcat_impresora': {
-      if (mensajeLimpio === '1') return 'Mo imprime'
+      if (mensajeLimpio === '1') return 'No imprime'
       if (mensajeLimpio === '2') return 'Imprime borroso'
       if (mensajeLimpio === '3') return 'Atasco de papel'
       if (mensajeLimpio === '4') return 'Imprime símbolos raros'
@@ -128,7 +128,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
       break
     }
 
-    // Subcategorías de cámara
+    // Subcategorías de Internet
     case 'subcat_internet': {
       if (mensajeLimpio === '1') return 'No navega'
       if (mensajeLimpio === '2') return 'No puedo acceder a sitios web'
@@ -191,7 +191,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
         '1': 'problema_impresora',
         '2': 'problema_pc',
         '3': 'problema_telefono',
-        '4': 'problema_camara',
+        '4': 'problema_internet',
         '5': 'problema_audiencia'
       }
       const categoria = categorias[mensajeLimpio]
@@ -209,7 +209,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
       return 'calificacion_invalida'
     }
 
-    // Si no hay mapeo específico, devolver el mensaje original
+   } // Si no hay mapeo específico, devolver el mensaje original
     return mensajeLimpio
 }
 
@@ -217,5 +217,4 @@ function limpiarEstado(senderId: string) {
   session.estado[senderId] = 'nodo_saludo'
   session.contexto[senderId] = {}
   delete session.conversacionFinalizada[senderId]
-}
 }
