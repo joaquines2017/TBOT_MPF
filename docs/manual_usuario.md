@@ -67,3 +67,73 @@ Envía "6" o escribe "ayuda" para ver este menú
 ## Ejemplos de Uso
 
 ### Crear un Ticket
+```
+Usuario: 1
+Bot: Selecciona la categoría...
+Usuario: 2
+Bot: Selecciona la subcategoría...
+Usuario: si
+Bot: ✅ Ticket creado con éxito...
+Bot: 📝 Por favor, calificá la atención: 1️⃣ Mala 2️⃣ Buena 3️⃣ Muy Buena 4️⃣ Excelente
+Usuario: 4
+Bot: ¡Gracias por tu calificación! La conversación ha finalizado.
+```
+
+### Consultar un Ticket
+```
+Usuario: 2
+Bot: Ingresá el número de ticket...
+Usuario: 12345
+Bot: 📋 Detalles del ticket #12345...
+```
+
+### Cancelar un Ticket
+```
+Usuario: 3
+Bot: Ingresá el número de ticket...
+Usuario: 12345
+Bot: ✅ El ticket #12345 ha sido rechazado exitosamente.
+```
+
+### Ver Todos los Tickets y Paginación
+```
+Usuario: 4
+Bot: Elija el estado de los tickets...
+Usuario: 1
+Bot: Estos son tus tickets con estado "Nuevo": ... Opciones: 3️⃣ Salir 4️⃣ Siguiente
+Usuario: 4
+Bot: ...siguiente página...
+Usuario: 3
+Bot: 🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.
+```
+
+### Reabrir un Ticket
+```
+Usuario: 5
+Bot: Ingresá el número de ticket...
+Usuario: 12345
+Bot: El ticket #12345 ha sido reabierto y está en proceso.
+```
+
+### Ayuda
+```
+Usuario: 6
+Bot: Menú principal con opciones y ayuda.
+```
+
+## Solución de Problemas
+
+- Si el usuario ingresa un número de ticket inválido:
+  - Bot responde: "⚠️ Número de ticket inválido. Por favor, ingresá solo números."
+- Si el ticket no existe:
+  - Bot responde: "⚠️ No se encontró el ticket #12345"
+- Si ocurre un error interno:
+  - Bot responde: "❌ Ocurrió un error. Por favor, intentá nuevamente."
+- Si el usuario envía una opción no válida en paginación:
+  - Bot responde: "Opción no válida. Por favor, elige una opción del menú."
+
+## Recomendaciones
+
+- Finaliza la conversación con "salir" o la opción correspondiente.
+- Usa "siguiente" y "anterior" para navegar entre páginas de tickets.
+- Envía "ayuda" para ver el menú principal.

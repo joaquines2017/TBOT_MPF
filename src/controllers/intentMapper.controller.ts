@@ -69,7 +69,7 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
         return 'problema teléfono ip'
       }
       if (mensajeLimpio === '4' || mensajeLimpio.includes('Internet')) {
-        session.estado[senderId] = 'subcat_camara'
+        session.estado[senderId] = 'subcat_internet'
         return 'problema Internet'
       }
       if (mensajeLimpio === '5' || mensajeLimpio.includes('audiencia')) {

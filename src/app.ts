@@ -217,25 +217,6 @@ const main = async () => {
       }
 
       // Procesos normales de BuilderBot
-      // [DEBUG] Estado antes de transformar mensaje
-      console.log('🟡 [DEBUG] Estado actual:', {
-        estado: session.estado[senderId],
-        mensajeLimpio: mensajeTexto,
-        contexto: session.contexto[senderId],
-        conversacionFinalizada: session.conversacionFinalizada[senderId]
-      });
-
-      // Si el usuario responde '3' en los estados de tickets, NO transformar ni enviar a Botpress
-      if ((mensajeTexto === '3') && (session.estado[senderId] === 'mostrando_tickets' || session.estado[senderId] === 'paginando_tickets')) {
-        console.log('🚫 [DEBUG] Opción 3=Salir capturada por BuilderBot antes de transformar. Estado:', session.estado[senderId]);
-        const respuestaTicket = await handleTicketFlow(senderId, '3', session.contexto[senderId] || {});
-        await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
-        if (session.conversacionFinalizada[senderId]) {
-          limpiarEstado(senderId);
-        }
-        return;
-      }
-
       const mensajeTransformado = handleIncomingMessage(mensajeTexto, senderId);
       const intentFinal = mensajeTransformado;
       console.log('🔄 Mensaje transformado:', { original: mensajeTexto, transformado: intentFinal });

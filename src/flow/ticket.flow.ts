@@ -148,19 +148,17 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
       if (typeof intentNorm !== 'string') intentNorm = String(intentNorm);
       intentNorm = intentNorm.trim().toLowerCase();
       console.log('🟡 [DEBUG] intent recibido en mostrando_tickets:', intent, '| Normalizado:', intentNorm);
-      // Si el usuario envía 3=Salir en mostrando_tickets, despedir y finalizar
-      if (intentNorm === '3' || intentNorm === 'salir') {
-        session.conversacionFinalizada[_senderId] = true;
-        const despedida = '🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.';
-        setTimeout(() => limpiarEstado(_senderId), 100);
-        return despedida;
-      }
       // Mapear variantes de intent a estado Redmine
       let estadoRedmine = '';
       if (intentNorm === '1' || intentNorm === 'nuevo') {
         estadoRedmine = 'Nueva';
       } else if (intentNorm === '2' || intentNorm === 'en curso' || intentNorm === 'en_proceso' || intentNorm === 'en proceso') {
         estadoRedmine = 'En curso';
+      } else if (intentNorm === '3' || intentNorm === 'salir') {
+        // Opción salir
+        session.conversacionFinalizada[_senderId] = true;
+        limpiarEstado(_senderId);
+        return '🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.';
       }
       if (estadoRedmine) {
         const contacto = await RedmineService.buscarContactoPorTelefono(_senderId);
@@ -177,7 +175,7 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
       } else {
         // Si el intent no es válido, mostrar el menú de selección de estado
         session.estado[_senderId] = 'mostrando_tickets';
-        return '📋 Elijaaaaa el estado de los tickets que desea ver:\n1️⃣ Nuevo\n2️⃣ En curso';
+        return '📋 Elija el estado de los tickets que desea ver:\n1️⃣ Nuevo\n2️⃣ En curso';
       }
     }
 
@@ -501,47 +499,52 @@ const manejarPaginacionEstado = async (_senderId: string, pagina: number, estado
 
 // Paginación para tickets generales (sin filtro de estado)
 const manejarPaginacionGeneral = async (_senderId: string, pagina: number): Promise<string> => {
-  const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', pagina);
-  session.paginaActual[_senderId] = pagina;
+  // Si el usuario envía '3' (Salir) en cualquier página, despedir y finalizar
+  if (session.estado[_senderId] === 'mostrando_tickets' && session.contexto[_senderId]?.salirSolicitado) {
+    session.conversacionFinalizada[_senderId] = true;
+    setTimeout(() => limpiarEstado(_senderId), 100);
+    return '🤖 T-BOT ha finalizado la conversación. Gracias por comunicarte con nosotros. Saludos.';
+  }
 
-  // Formatear cada ticket
+  const resultado = await RedmineService.listarIssuesDelProyecto('soporte-tecnico-mpf', 1); // Traer todos los tickets
   const tickets = resultado.tickets || resultado.issues || resultado.data || [];
+  const ticketsPorPagina = 5;
+  const totalTickets = tickets.length;
+  const totalPaginas = Math.ceil(totalTickets / ticketsPorPagina);
+  const paginaActual = Math.max(1, Math.min(pagina, totalPaginas));
+  session.paginaActual[_senderId] = paginaActual;
+
+  const inicio = (paginaActual - 1) * ticketsPorPagina;
+  const fin = inicio + ticketsPorPagina;
+  const ticketsPagina = tickets.slice(inicio, fin);
+
   let ticketsFormateados = '';
-  if (Array.isArray(tickets) && tickets.length > 0) {
-    ticketsFormateados = tickets.map(t =>
+  if (Array.isArray(ticketsPagina) && ticketsPagina.length > 0) {
+    ticketsFormateados = ticketsPagina.map(t =>
       `🎫 Ticket ID: ${t.id}\n✏️ Asunto: ${t.subject}\n👤 Técnico: ${t.author?.name || t.contact?.name || 'Sin usuario'}\n📊 ${t.status?.name || 'Sin estado'}\n`
     ).join('\n');
   } else {
     ticketsFormateados = 'No se encontraron tickets en esta página.';
   }
 
-  // Opciones de navegación (nueva numeración)
+  // Opciones de navegación
   let opciones = '\nOpciones:';
-  const ticketsPorPagina = 5;
-  const hayMasPaginas = tickets.length > ticketsPorPagina;
-  if (pagina === 1 && hayMasPaginas) {
-    opciones += '\n1️⃣ Salir\n2️⃣ Siguiente';
-  } else if (pagina > 1 && hayMasPaginas) {
-    opciones += '\n1️⃣ Salir\n2️⃣ Siguiente\n3️⃣ Anterior';
-  } else if (pagina > 1 && !hayMasPaginas) {
-    opciones += '\n1️⃣ Salir\n3️⃣ Anterior';
+  if (paginaActual === 1) {
+    opciones += '\n1️⃣ Nuevo\n2️⃣ En curso\n3️⃣ Salir';
+    if (totalTickets > ticketsPorPagina) opciones += '\n4️⃣ Siguiente';
   } else {
-    opciones += '\n1️⃣ Salir';
-  }
-
-  // Menú de selección de estado solo en la primera página
-  let menuEstados = '';
-  if (pagina === 1) {
-    menuEstados = '\n\n📋 Filtrar por estado:\n1️⃣ Nuevo\n2️⃣ En curso';
+    opciones += '\n3️⃣ Salir';
+    if (fin < totalTickets) opciones += '\n4️⃣ Siguiente';
+    opciones += '\n5️⃣ Anterior';
   }
 
   // Mensaje de calificación al finalizar
   let calificacion = '';
-  if (!resultado.hayMasPaginas && (!resultado.tickets || resultado.tickets.length === 0 || pagina > 1)) {
+  if (totalTickets === 0 || (paginaActual === totalPaginas && ticketsPagina.length === 0)) {
     calificacion = '\n\n📝 ¿Cómo calificarías la atención?\n1️⃣ Mala\n2️⃣ Buena\n3️⃣ Muy Buena\n4️⃣ Excelente';
   }
 
-  return `📋 Tickets encontrados:\n${ticketsFormateados}\n${opciones}${menuEstados}${calificacion}`;
+  return `📋 Tickets encontrados:\n${ticketsFormateados}\n${opciones}${calificacion}`;
 }
 
 

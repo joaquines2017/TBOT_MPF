@@ -74,21 +74,22 @@ sequenceDiagram
 ### Variables de Entorno
 ```env
 # WhatsApp
-WA_CLIENT_ID=
-WA_WEBHOOK_URL=
+WHATSAPP_SESSION=builderbot-session
 
 # Botpress
-BP_API_URL=
-BP_BOT_ID=
+BOTPRESS_URL=http://botpress:3000
+BOT_ID=tbot
 
 # Redmine
-REDMINE_URL=
-REDMINE_API_KEY=
+REDMINE_URL=https://incidentes.mpftucuman.gob.ar/
+REDMINE_API_KEY=tu-api-key
 
 # Database
-DB_HOST=
-DB_PORT=
-DB_NAME=
+DB_HOST=host.docker.internal
+DB_PORT=5432
+DB_USER=admin
+DB_PASS=tu-contraseña
+DB_NAME=tbot
 ```
 
 ### Dependencias Principales
@@ -143,3 +144,28 @@ DB_NAME=
 3. Configurar variables de entorno
 4. Compilar TypeScript
 5. Iniciar con PM2
+
+## 🚦 Quickstart para Desarrolladores
+
+```bash
+git clone <url-repositorio>
+cd base-ts-baileys-postgres
+npm install
+cp .env.example .env # O edita tu .env
+npm run dev # Desarrollo
+npm run build && npm start # Producción
+```
+
+## Ejemplo de Interacción
+
+```
+Usuario: 1
+Bot: Selecciona la categoría...
+Usuario: 2
+Bot: Selecciona la subcategoría...
+Usuario: si
+Bot: ✅ Ticket creado con éxito...
+Bot: 📝 Por favor, calificá la atención: 1️⃣ Mala 2️⃣ Buena 3️⃣ Muy Buena 4️⃣ Excelente
+Usuario: 4
+Bot: ¡Gracias por tu calificación! La conversación ha finalizado.
+```
