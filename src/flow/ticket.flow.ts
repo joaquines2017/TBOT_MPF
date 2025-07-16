@@ -49,9 +49,10 @@ const consultarTicket = async (ticketId: number): Promise<string> => {
     timeZone: 'America/Argentina/Buenos_Aires'
   })
 
+  //Se quita Categoría del detalle del ticket porque subject trae la categoría y subcategoría
+  //📂 Categoría: ${ticket.subject?.category?.name || 'Sin categoría'}
   return `📋 Detalles del ticket #${ticket.id}:
 🆔 ID: ${ticket.id}
-📂 Categoría: ${ticket.category?.name || 'Sin categoría'}
 ✏️ Asunto: ${ticket.subject}
 👤 Asignado al técnico: ${ticket.assigned_to?.name || 'Sin asignar'}
 📅 Creado: ${fechaCreacion}
@@ -219,7 +220,7 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
 
     // Guardar calificación y finalizar conversación tras ver todos/salir
     if (/^[1-4]$/.test(intent) && session.estado[_senderId] === 'esperando_calificacion_tickets') {
-      await RedmineService.guardarCalificacion(null, intent); // null porque no hay ticket específico
+      await RedmineService.guardarCalificacion(null, intent, _senderId); // null porque no hay ticket específico
       session.conversacionFinalizada[_senderId] = true;
       limpiarEstado(_senderId);
       return '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.';
@@ -242,9 +243,10 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
         timeZone: 'America/Argentina/Buenos_Aires'
       })
 
+      // Se quita Categoría del detalle del ticket porque subject trae la categoría y subcategoría
+      //4📂 Categoría: ${ticket.subject?.name || 'Sin categoría'}
       return `✅ Ticket creado con éxito
 🆔 ID: ${ticket.id}
-📂 Categoría: ${ticket.category?.name || 'Sin categoría'}
 ✏️ Asunto: ${ticket.subject}
 👤 Asignado al técnico: ${ticket.assigned_to?.name || 'Sin asignar'}
 🕒 Creado: ${fechaCreacion}
@@ -259,7 +261,7 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
     // Manejo de calificación
     if (/^[1-4]$/.test(intent) && session.estado[_senderId] === 'esperando_calificacion') {
       const ticketId = session.contexto[_senderId]?.ticketConsultado;
-      await RedmineService.guardarCalificacion(ticketId, intent);
+      await RedmineService.guardarCalificacion(ticketId, intent, _senderId);
       session.conversacionFinalizada[_senderId] = true;
       limpiarEstado(_senderId);
       return '¡Gracias por tu calificación! 🙏\nTu opinión nos ayuda a mejorar.\nLa conversación ha finalizado.';
@@ -300,7 +302,7 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
     // Manejar consulta de ticket
     if (intent === 'consultar') {
       session.estado[_senderId] = 'esperando_id_consulta'
-      return '🔍Por favor, ingresá el número de ticket que querés consultar:'
+      return '🔍Por favor, ingresá el número de ticket que querés consultarrrr:'
     }
 
     // Procesar número de ticket cuando estamos esperándolo
@@ -381,7 +383,7 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
 
       return `✅ Ticket creado con éxito
 🆔 ID: ${ticket.id}
-📂 Categoría: ${category}
+📂 Categoría: ${category?.name}
 ✏️ Asunto: ${ticket.subject}
 👤 Asignado al técnico: ${miembro.name}
 🕒 Creado: ${fechaCreacion}

@@ -8,22 +8,24 @@ import json from '@rollup/plugin-json';
 export default {
   input: './src/app.ts',
 output: {
-  entryFileNames: 'app.js',
+  entryFileNames: 'app.cjs',
   dir: 'dist',
-  format: 'esm',
+  format: 'cjs',
   sourcemap: true
 },
   plugins: [
     nodeResolve(),
     json(),
-    commonjs(),
+    commonjs({
+      ignoreDynamicRequires: true
+    }),
     typescript()
   ],
   external: [
     'axios',
     'form-data',
     'node-domexception',
-    'fetch-blob',
+    //'fetch-blob',
     'qrcode-terminal',
     '@ffmpeg-installer/ffmpeg',
     '@ffmpeg-installer',
@@ -31,6 +33,7 @@ output: {
     'fluent-ffmpeg',
     '@ffprobe-installer/ffprobe',
     'ffprobe',
-    'sharp'
+    'sharp',
+    'pg'
   ]
 };

@@ -13,6 +13,91 @@
 
 import { session } from "../flow/ticket.flow"
 
+// Función para mapear estados de Botpress a estados locales del intent mapper
+export function mapearEstadoBotpress(estadoBotpress: string): string | null {
+  const mapeoEstados: { [key: string]: string } = {
+    'nodo_saludo': 'nodo_saludo',
+    'nodo_generar_ticket': 'esperando_categoria',
+    'nodo_cat_impresora': 'subcat_impresora',
+    'nodo_cat_pc': 'subcat_pc',
+    'nodo_cat_telefonoIP': 'subcat_telefonoip',
+    'nodo_cat_internet': 'subcat_internet',
+    'nodo_cat_audiencia': 'subcat_audiencia',
+    'nodo_confirmar_envio': 'nodo_confirmar_envio',
+    'nodo_consultar_ticket': 'esperando_id_consulta',
+    'nodo_cancelar_ticket': 'esperando_id_cancelar',
+    'nodo_ver_todos_tickets': 'mostrando_tickets',
+    'nodo_ayuda': 'nodo_ayuda',
+  };
+  
+  return mapeoEstados[estadoBotpress] || null;
+}
+
+// Función para inferir estado basado en la respuesta de Botpress
+export function inferirEstadoPorRespuesta(respuestaTexto: string): string | null {
+  if (!respuestaTexto) return null;
+  
+  // Detectar nodos basados en contenido de la respuesta
+  if (respuestaTexto.includes('seleccioná la categoría de tu problema')) {
+    return 'esperando_categoria';
+  }
+  if (respuestaTexto.includes('¿Qué problema tenés con la impresora?')) {
+    return 'subcat_impresora';
+  }
+  if (respuestaTexto.includes('¿Qué problema tenés con la PC?')) {
+    return 'subcat_pc';
+  }
+  if (respuestaTexto.includes('¿Qué problema tenés con el teléfono IP?')) {
+    return 'subcat_telefonoip';
+  }
+  if (respuestaTexto.includes('¿Qué problema tenés con internet?')) {
+    return 'subcat_internet';
+  }
+  if (respuestaTexto.includes('¿Qué problema tenés con la audiencia virtual?')) {
+    return 'subcat_audiencia';
+  }
+  if (respuestaTexto.includes('¿Deseás generar el ticket?')) {
+    return 'nodo_confirmar_envio';
+  }
+  if (respuestaTexto.includes('¿Qué te gustaría hacer?')) {
+    return 'nodo_saludo';
+  }
+  if (respuestaTexto.includes('🆘 Estoy para ayudarte') || respuestaTexto.includes('Estas son las opciones disponibles')) {
+    return 'nodo_ayuda';
+  }
+  
+  return null;
+}
+
+// Función para sincronizar estado local con estado de Botpress
+export function sincronizarEstadoBotpress(senderId: string, estadoBotpress?: string, respuestaTexto?: string): boolean {
+  let estadoLocal: string | null = null;
+  
+  // Primero intentar con el estado de Botpress
+  if (estadoBotpress) {
+    estadoLocal = mapearEstadoBotpress(estadoBotpress);
+  }
+  
+  // Si no funciona, inferir por el contenido de la respuesta
+  if (!estadoLocal && respuestaTexto) {
+    estadoLocal = inferirEstadoPorRespuesta(respuestaTexto);
+  }
+  
+  if (estadoLocal) {
+    session.estado[senderId] = estadoLocal;
+    console.log('🔄 Estado sincronizado:', { 
+      metodo: estadoBotpress ? 'botpress_variable' : 'inferencia_contenido',
+      estadoBotpress: estadoBotpress || 'N/A', 
+      estadoLocal,
+      respuestaPreview: respuestaTexto?.substring(0, 50) + '...'
+    });
+    return true;
+  }
+  
+  console.log('⚠️ No se pudo sincronizar el estado');
+  return false;
+}
+
 
 export function handleIncomingMessage(mensaje: string, senderId: string): string {
   const mensajeLimpio = mensaje.trim().toLowerCase()
@@ -34,25 +119,28 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
 
   switch (nodoActual) {
     case 'nodo_saludo': {
-      if (mensajeLimpio === '1' || mensajeLimpio.includes('generar')) {
-       session.estado[senderId] = 'esperando_categoria'
-        return 'generar'  // Enviar a Botpress para mostrar categorías
+      // Solo mapear opciones numéricas exactas, NO texto libre
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'esperando_categoria'
+        return 'generar'
       }
-      if (mensajeLimpio === '2' || mensajeLimpio.includes('consultar')) {
+      if (mensajeLimpio === '2') {
         session.estado[senderId] = 'esperando_id_consulta'
         return 'consultar'
       }
-      if (mensajeLimpio === '3' || mensajeLimpio.includes('cancelar')) {
+      if (mensajeLimpio === '3') {
         session.estado[senderId] = 'esperando_id_cancelar'
         return 'rechazar ticket'
       }
-      if (mensajeLimpio === '4' || mensajeLimpio.includes('ver todos')) {
+      if (mensajeLimpio === '4') {
         return 'ver_todos'
       }
-      if (mensajeLimpio === '5' || mensajeLimpio.includes('ayuda')) {
+      if (mensajeLimpio === '5') {
         return 'ayuda'
       }
-      return mensajeLimpio // Default return for nodo_saludo
+      
+      // TODO: texto libre va directamente a Botpress sin transformación
+      return mensajeLimpio
     }
 
     case 'esperando_categoria': {
@@ -85,74 +173,153 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
 
     // Subcategorías de impresora
     case 'subcat_impresora': {
-      if (mensajeLimpio === '1') return 'No imprime'
-      if (mensajeLimpio === '2') return 'Imprime borroso'
-      if (mensajeLimpio === '3') return 'Atasco de papel'
-      if (mensajeLimpio === '4') return 'Imprime símbolos raros'
-      if (mensajeLimpio === '5') return 'Ruidos extraños'
-      if (mensajeLimpio === '6') return 'Otro problema de impresora'
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No imprime'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Imprime borroso'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Atasco de papel'
+      }
+      if (mensajeLimpio === '4') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Imprime símbolos raros'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Ruidos extraños'
+      }
+      if (mensajeLimpio === '6') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Otro problema'
+      }
       if (mensajeLimpio === '7') {
         session.estado[senderId] = 'esperando_categoria'
-        return 'volver a categoría'
+        return 'volver a al menú categorías'
       }
       break
     }
 
     // Subcategorías de PC
     case 'subcat_pc': {
-      if (mensajeLimpio === '1') return 'PC no enciende'
-      if (mensajeLimpio === '2') return 'PC lenta'
-      if (mensajeLimpio === '3') return 'Problema con programas'
-      if (mensajeLimpio === '4') return 'Se reinicia sola'
-      if (mensajeLimpio === '5') return 'No reconoce dispositivos'
-      if (mensajeLimpio === '6') return 'Otro problema pc'
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'PC no enciende'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'PC lenta'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Problema con programas'
+      }
+      if (mensajeLimpio === '4') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Se reinicia sola'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No reconoce dispositivos'
+      }
+      if (mensajeLimpio === '6') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Otro problema pc'
+      }
       if (mensajeLimpio === '7') {
         session.estado[senderId] = 'esperando_categoria'
-        return 'volver a categoría'
+        return 'volver a al menú categorías'
       }
       break
     }
 
     // Subcategorías de teléfono IP
     case 'subcat_telefonoip': {
-      if (mensajeLimpio === '1') return 'No tiene tono'
-      if (mensajeLimpio === '2') return 'No recibe llamadas'
-      if (mensajeLimpio === '3') return 'No emite llamadas'
-      if (mensajeLimpio === '4') return 'No tiene red'
-      if (mensajeLimpio === '5') return 'Interferencia o cortes'
-      if (mensajeLimpio === '6') return 'Otro problema teléfono ip'
-      if (mensajeLimpio === '7') {
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No tiene tono'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No recibe llamadas'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No emite llamadas'
+      }
+      if (mensajeLimpio === '4') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No tiene conexión'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Otro problema'
+      }
+      if (mensajeLimpio === '6') {
         session.estado[senderId] = 'esperando_categoria'
-        return 'volver a categoría'
+        return 'volver a al menú categorías'
       }
       break
     }
 
     // Subcategorías de Internet
     case 'subcat_internet': {
-      if (mensajeLimpio === '1') return 'No navega'
-      if (mensajeLimpio === '2') return 'No puedo acceder a sitios web'
-      if (mensajeLimpio === '3') return 'Internet lento'
-      if (mensajeLimpio === '4') return 'Internet intermitente'
-      if (mensajeLimpio === '5') return 'Otro problema de internet'
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No navega'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No puedo acceder a sitios web'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Internet lento'
+      }
+      if (mensajeLimpio === '4') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Internet intermitente'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Otro problema'
+      }
       if (mensajeLimpio === '6') {
         session.estado[senderId] = 'esperando_categoria'
-        return 'volver a categoría'
+        return 'volver a al menú categorías'
       }
       break
     }
 
     // Subcategorías de audiencia
     case 'subcat_audiencia': {
-      if (mensajeLimpio === '1') return 'No funciona micrófono'
-      if (mensajeLimpio === '2') return 'No se escucha'
-      if (mensajeLimpio === '3') return 'Problemas de audio'
-      if (mensajeLimpio === '4') return 'No se ve video'
-      if (mensajeLimpio === '5') return 'Pantalla negra'
-      if (mensajeLimpio === '6') return 'Otro problema audiencia'
-      if (mensajeLimpio === '7') {
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No funciona micrófono'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No se escucha sonido'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No se ve video'
+      }
+      if (mensajeLimpio === '4') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'No se conecta a la audiencia'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_confirmar_envio'
+        return 'Otro problema'
+      }
+      if (mensajeLimpio === '6') {
         session.estado[senderId] = 'esperando_categoria'
-        return 'volver a categoría'
+        return 'volver a al menú categorías'
       }
       break
     }
@@ -207,6 +374,32 @@ export function handleIncomingMessage(mensaje: string, senderId: string): string
         return mensajeLimpio // Retornar solo el número
       }
       return 'calificacion_invalida'
+    }
+
+    case 'nodo_ayuda': {
+      // Manejo del nodo ayuda - similar al nodo_saludo pero desde ayuda
+      if (mensajeLimpio === '1') {
+        session.estado[senderId] = 'esperando_categoria'
+        return 'generar'
+      }
+      if (mensajeLimpio === '2') {
+        session.estado[senderId] = 'esperando_id_consulta'
+        return 'consultar'
+      }
+      if (mensajeLimpio === '3') {
+        session.estado[senderId] = 'esperando_id_cancelar'
+        return 'rechazar ticket'
+      }
+      if (mensajeLimpio === '4') {
+        return 'ver_todos'
+      }
+      if (mensajeLimpio === '5') {
+        session.estado[senderId] = 'nodo_saludo'
+        return 'menu principal'
+      }
+      
+      // Texto libre va directamente a Botpress
+      return mensajeLimpio
     }
 
    } // Si no hay mapeo específico, devolver el mensaje original

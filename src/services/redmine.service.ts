@@ -30,6 +30,7 @@
 
 import axios from 'axios'
 import chalk from 'chalk'
+import DataService from './data.service.js'
 
 // Inicialización perezosa del cliente axios y las variables de entorno
 function getApi() {
@@ -103,34 +104,74 @@ const RedmineService = {
   async buscarContactoPorTelefono(phone: string): Promise<any> {
     try {
       const api = getApi();
+      console.log(`🔍 Buscando contacto para teléfono: ${phone}`);
+      
       const responseContacts = await api.get('/contacts.json', {
         params: { 
           project_id: 33,
           include: 'custom_fields'
         }
       })
+      
       const contacts = responseContacts.data?.contacts || []
-      const phoneNormalized = phone.replace(/[^-9]/g, '')
+      console.log(`📞 Total de contactos encontrados: ${contacts.length}`);
+      
+      // Normalizar el número de entrada (remover todo excepto dígitos)
+      const phoneNormalized = phone.replace(/\D/g, '');
+      console.log(`📱 Número normalizado para búsqueda: ${phoneNormalized}`);
+      
       const contactFound = contacts.find((contact: any) => {
-        if (!contact.phones || !Array.isArray(contact.phones)) return false
-        return contact.phones.some((p: any) => 
-          p.number?.replace(/[^-9]/g, '').includes(phoneNormalized))
-      })
-      return contactFound
+        if (!contact.phones || !Array.isArray(contact.phones)) {
+          return false;
+        }
+        
+        return contact.phones.some((p: any) => {
+          if (!p.number) return false;
+          
+          // Normalizar el número del contacto
+          const contactPhoneNormalized = p.number.replace(/\D/g, '');
+          console.log(`🔍 Comparando: ${phoneNormalized} vs ${contactPhoneNormalized}`);
+          
+          // Buscar coincidencia (puede ser que el número contenga o esté contenido)
+          return contactPhoneNormalized.includes(phoneNormalized) || 
+                 phoneNormalized.includes(contactPhoneNormalized);
+        });
+      });
+      
+      if (contactFound) {
+        console.log(`✅ Contacto encontrado:`, {
+          id: contactFound.id,
+          nombre: `${contactFound.first_name} ${contactFound.last_name}`,
+          compania: contactFound.company,
+          telefonos: contactFound.phones?.map((p: any) => p.number)
+        });
+      } else {
+        console.log(`❌ No se encontró contacto para el número: ${phone}`);
+      }
+      
+      return contactFound;
     } catch (error) {
-      console.error('❌ Error buscando contacto:', error)
-      return null
+      console.error('❌ Error buscando contacto:', error);
+      return null;
     }
   },
 
   async createTicket(ticketData: any) {
     try {
+      console.log(`🎫 Creando ticket para senderId: ${ticketData.senderId}`);
+      
       if (ticketData.senderId) {
-        const contacto = await this.buscarContactoPorTelefono(ticketData.senderId)
+        const contacto = await this.buscarContactoPorTelefono(ticketData.senderId);
+        
         if (contacto) {
-          console.log('✅ Contacto encontrado:', contacto.first_name, contacto.last_name)
-          ticketData.custom_fields = [
-            ...(ticketData.custom_fields || []),
+          console.log('✅ Contacto encontrado en Redmine:', {
+            nombre: `${contacto.first_name} ${contacto.last_name}`,
+            compania: contacto.company,
+            id: contacto.id
+          });
+          
+          // Preparar los campos personalizados
+          const camposPersonalizados = [
             {
               id: 4, // ID del campo "Empleado"
               value: `${contacto.first_name} ${contacto.last_name}`
@@ -141,11 +182,29 @@ const RedmineService = {
             },
             {
               id: 30, // ID del campo "Nro de Contacto"
-              value: ticketData.senderId.replace(/[^-9]/g, '')
+              value: ticketData.senderId.replace(/\D/g, '') // Solo dígitos
             }
-          ]
+          ];
+          
+          // Agregar campos personalizados al ticket
+          ticketData.custom_fields = [
+            ...(ticketData.custom_fields || []),
+            ...camposPersonalizados
+          ];
+          
+          console.log('📝 Campos personalizados agregados:', camposPersonalizados);
         } else {
-          console.log('⚠️ No se encontró contacto para el número:', ticketData.senderId)
+          console.log('⚠️ No se encontró contacto en Redmine para el número:', ticketData.senderId);
+          console.log('📝 El ticket se creará sin datos de empleado/oficina');
+          
+          // Aún así, agregar el número de contacto
+          ticketData.custom_fields = [
+            ...(ticketData.custom_fields || []),
+            {
+              id: 30, // ID del campo "Nro de Contacto"
+              value: ticketData.senderId.replace(/\D/g, '') // Solo dígitos
+            }
+          ];
         }
       }
       console.log('📤 RedmineService - Enviando solicitud de creación:', 
@@ -343,26 +402,39 @@ const RedmineService = {
     }
   },
 
-  async guardarCalificacion(ticketId: number, calificacion: string): Promise<boolean> {
+  async guardarCalificacion(ticketId: number | null, calificacion: string, userId?: string): Promise<boolean> {
     try {
-      const api = getApi();
       const calificaciones = {
         '1': 'Mala 😞',
-        '2': 'Buena 🙂',
+        '2': 'Buena 🙂', 
         '3': 'Muy Buena 😊',
         '4': 'Excelente 🌟'
       }
-      await api.put(`/issues/${ticketId}.json`, {
-        issue: {
-          notes: `📊 Calificación del servicio: ${calificaciones[calificacion] || 'No especificada'}`,
-          private_notes: true
-        }
-      })
-      console.log(`✅ Calificación guardada para ticket #${ticketId}: ${calificaciones[calificacion]}`)
-      return true
+      
+      const calificacionTexto = calificaciones[calificacion] || 'No especificada';
+      
+      // Guardar en Redmine solo si hay ticketId
+      if (ticketId) {
+        const api = getApi();
+        await api.put(`/issues/${ticketId}.json`, {
+          issue: {
+            notes: `📊 Calificación del servicio: ${calificacionTexto}`,
+            private_notes: true
+          }
+        });
+        console.log(`✅ Calificación guardada en Redmine para ticket #${ticketId}: ${calificacionTexto}`);
+      }
+      
+      // Guardar en nuestra base de datos
+      if (userId) {
+        await DataService.saveTicketRating(userId, ticketId || 0, parseInt(calificacion));
+        console.log(`✅ Calificación guardada en BD para usuario ${userId}: ${calificacionTexto}`);
+      }
+      
+      return true;
     } catch (error) {
-      console.error('❌ Error al guardar calificación:', error)
-      return false
+      console.error('❌ Error al guardar calificación:', error);
+      return false;
     }
   },
 

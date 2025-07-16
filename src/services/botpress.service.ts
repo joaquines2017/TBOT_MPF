@@ -13,8 +13,8 @@
 import fetch from 'node-fetch'
 import chalk from 'chalk'
 
-const BOTPRESS_URL = 'http://botpress:3000'
-const BOT_ID = 'tbot' // ⚠️ Verificá que este sea el nombre exacto de tu bot en Botpress CE
+const BOTPRESS_URL = 'http://localhost:3000'
+const BOT_ID = 'tbotv2' // ⚠️ Verificá que este sea el nombre exacto de tu bot en Botpress CE
 
 interface BotpressResponse {
   responses?: Array<{
@@ -28,6 +28,13 @@ interface BotpressResponse {
     currentFlow?: string;
     currentNode?: string;
   };
+  // Variables de sesión de Botpress
+  session?: {
+    [key: string]: any;
+  };
+  // Estado extraído de las variables de sesión
+  estado?: string;
+  categoria?: string;
 }
 
 export class BotpressService {
@@ -65,6 +72,23 @@ export class BotpressService {
 
       console.log(chalk.greenBright(`📩 Respuesta de Botpress:`))
       console.dir(data, { depth: null, colors: true })
+
+      // Extraer variables de sesión si están disponibles
+      console.log(chalk.blue(`🔍 Verificando variables de sesión...`))
+      console.log(chalk.blue(`📊 data.session:`, data.session))
+      console.log(chalk.blue(`📊 data.context:`, data.context))
+      console.log(chalk.blue(`📊 Todas las claves de data:`, Object.keys(data)))
+      
+      if (data.session) {
+        data.estado = data.session.estado;
+        data.categoria = data.session.categoria;
+        console.log(chalk.magenta(`🔄 Variables de sesión de Botpress:`, { 
+          estado: data.estado, 
+          categoria: data.categoria 
+        }));
+      } else {
+        console.log(chalk.yellow(`⚠️ No se encontraron variables de sesión en la respuesta`));
+      }
 
       return data
     } catch (error) {

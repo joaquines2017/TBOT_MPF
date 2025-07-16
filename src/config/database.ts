@@ -13,19 +13,29 @@
  * - Lanza un error si faltan variables de entorno requeridas.
  */
 import { Sequelize } from 'sequelize';
-// dotenv ya cargado globalmente en app.ts
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Configurar dotenv para cargar variables de entorno
+dotenv.config({ path: path.join(process.cwd(), '.env') });
+
+// Debug: verificar variables en database.ts
+console.log('🔧 [database.ts] Variables de entorno:');
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_PASS:', process.env.DB_PASS ? '***' : 'undefined');
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_PORT:', process.env.DB_PORT);
 
 const sequelize = new Sequelize(
     process.env.DB_NAME!,
-    process.env.DB_USER || 'admin',
+    process.env.DB_USER!,
     process.env.DB_PASS!,
     {
         host: process.env.DB_HOST!,
-        port: Number(process.env.DB_PORT!),
+        port: Number(process.env.DB_PORT!) || 5432,
         dialect: 'postgres',
         logging: false,
-        username: process.env.DB_USER!, // 🔥 Agregar username explícitamente
-        password: process.env.DB_PASS!,
     }
 );
 

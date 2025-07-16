@@ -1,10 +1,34 @@
+# Dependencias
+node_modules/
+
+# Archivos compilados
 dist/*
-node_modules
+
+# Variables de entorno (contiene credenciales)
 .env
 
-*_sessions
-*tokens
-.wwebjs*
+# Sesiones de WhatsApp (datos sensibles)
+*_sessions/
+*tokens/
+.wwebjs*/
+bot_sessions/
 
+# Logs
 *.log
+logs/
+
+# Archivos temporales de WhatsApp
 *qr.png
+*.qr.png
+
+# Archivos de desarrollo
+.vscode/
+.idea/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de backup
+*.bak
+*.backup

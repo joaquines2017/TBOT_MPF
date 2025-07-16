@@ -115,7 +115,7 @@ interface EstadosSesion {
   subcat_impresora: 'Subcategorías impresora',
   subcat_pc: 'Subcategorías PC',
   subcat_telefonoip: 'Subcategorías teléfono',
-  subcat_camara: 'Subcategorías cámara',
+  subcat_internet 'Subcategorías internet',
   subcat_audiencia: 'Subcategorías audiencia',
   nodo_confirmar_envio: 'Confirmación final',
   esperando_id_consulta: 'Esperando número consulta',

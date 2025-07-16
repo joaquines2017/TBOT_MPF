@@ -14,8 +14,9 @@ export type EstadoChat =
   | 'subcat_impresora'
   | 'subcat_pc'
   | 'subcat_telefonoip'
-  | 'subcat_camara'
+  | 'subcat_internet'
   | 'subcat_audiencia'
+  | 'nodo_ayuda'
 
 export interface ContextoChat {
   ticketId?: number

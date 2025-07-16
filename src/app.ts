@@ -25,18 +25,31 @@ import { BaileysProvider as Provider } from '@builderbot/provider-baileys'
 import dotenv from 'dotenv'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { handleIncomingMessage } from './controllers/intentMapper.controller'
+import BotSessionService from './services/botSession.service'
 import { BotpressService } from './services/botpress.service'
 import { handleTicketFlow, session, limpiarEstado } from './flow/ticket.flow'
 import RedmineService from './services/redmine.service'
+import { handleIncomingMessage, sincronizarEstadoBotpress } from './controllers/intentMapper.controller'
+import DataService from './services/data.service'
+
+// Configurar dotenv ANTES de usar process.env
+console.log('📁 Buscando .env en:', path.join(process.cwd(), '.env'))
+dotenv.config({ path: path.join(process.cwd(), '.env') })
+console.log('✅ dotenv.config() ejecutado')
+
+// Debug: verificar variables de entorno
+console.log('🔍 Variables de entorno cargadas:')
+console.log('DB_HOST:', process.env.DB_HOST)
+console.log('DB_PORT:', process.env.DB_PORT)
+console.log('DB_USER:', process.env.DB_USER)
+console.log('DB_PASS:', process.env.DB_PASS ? '***' : 'undefined')
+console.log('DB_NAME:', process.env.DB_NAME)
 
 const PORT = process.env.PORT ?? 3008
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-
-dotenv.config({ path: path.join(process.cwd(), '.env') })
-console.log(await RedmineService.listarCamposIssue())
-console.log(await RedmineService.listarUsuariosYContactos())
+//console.log(await RedmineService.listarCamposIssue())
+//console.log(await RedmineService.listarUsuariosYContactos())
 const mainFlow = createFlow([])
 
 
@@ -53,7 +66,7 @@ const simulateTyping = async (provider: any, to: string, durationMs: number = 10
   }
 }
 
-const sendMessageSafely = async (provider: any, to: string, text: string | undefined) => {
+/*const sendMessageSafely = async (provider: any, to: string, text: string | undefined) => {
   if (!text) {
     console.warn('⚠️ Intento de enviar mensaje vacío')
     return
@@ -68,7 +81,7 @@ const sendMessageSafely = async (provider: any, to: string, text: string | undef
 }
 
 const MENSAJE_ERROR = '⚠️ Disculpá, hubo un problema al procesar tu mensaje. Por favor, intentá nuevamente.'
-
+*/
 const main = async () => {
   const adapterDB = new Database({
     host: process.env.DB_HOST!,
@@ -110,6 +123,9 @@ const main = async () => {
       const typingDuration = Math.min(Math.max(text.length * 50, 1000), 3000);
       await simulateTyping(provider, to, typingDuration);
       await provider.sendMessage(to, text, {});
+      
+      // Guardar mensaje saliente en historial
+      await DataService.saveMessage(to, text, 'outgoing');
     } catch (error) {
       console.error('❌ Error al enviar mensaje:', error);
     }
@@ -122,6 +138,21 @@ const main = async () => {
       const senderId = ctx.from
       const mensajeTexto = ctx.body.trim().toLowerCase()
 
+      // --- SESIÓN PERSISTENTE EN BASE DE DATOS ---
+      // 1. Crear/actualizar contacto
+      await DataService.getOrCreateContact(senderId);
+      
+      // 2. Guardar mensaje entrante en historial
+      await DataService.saveMessage(senderId, ctx.body, 'incoming');
+      
+      // 3. Obtener o crear sesión en la base de datos
+      let dbSession = await BotSessionService.getSessionByPhone(senderId);
+      if (!dbSession) {
+        dbSession = await BotSessionService.createOrUpdateSession(senderId, { currentNode: 'inicio', history: [] });
+      }
+      const dbState = (dbSession.values as { [key: string]: any }) || {};
+      dbState.lastInput = mensajeTexto;
+      dbState.history = Array.isArray(dbState.history) ? [...dbState.history, mensajeTexto] : [mensajeTexto];
       try {
         // 1. Calificación siempre primero: BuilderBot debe capturarla antes que cualquier otro flujo
         if (session.estado[senderId] === 'esperando_calificacion') {
@@ -130,6 +161,10 @@ const main = async () => {
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
           }
+          // Guardar estado actualizado en la base de datos
+          dbState.currentNode = 'calificacion';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
           return
         }
 
@@ -150,6 +185,10 @@ const main = async () => {
 
           session.contexto[senderId].saludoEnviado = true
           delete session.contexto[senderId].saludoEnProceso
+          // Guardar estado actualizado en la base de datos
+          dbState.currentNode = 'saludo';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
           return
         }
 
@@ -165,6 +204,9 @@ const main = async () => {
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
           }
+          dbState.currentNode = 'cancelar_ticket';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
           return
         }
 
@@ -175,6 +217,9 @@ const main = async () => {
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
           }
+          dbState.currentNode = 'consultar_ticket';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
           return
         }
 
@@ -188,6 +233,10 @@ const main = async () => {
             delete session.contexto[senderId]
             delete session.conversacionFinalizada[senderId]
           }
+          dbState.currentNode = 'ticket_generado';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
+          
           return
         }
 
@@ -217,9 +266,16 @@ const main = async () => {
       }
 
       // Procesos normales de BuilderBot
+      // MAPEO DE INTENTS: Usar el controlador intentMapper para transformar opciones numéricas a texto
       const mensajeTransformado = handleIncomingMessage(mensajeTexto, senderId);
       const intentFinal = mensajeTransformado;
       console.log('🔄 Mensaje transformado:', { original: mensajeTexto, transformado: intentFinal });
+
+      // Actualizar estado en base de datos después de procesar con intent mapper
+      if (session.estado[senderId]) {
+        dbState.currentNode = session.estado[senderId];
+        await BotSessionService.updateSessionValues(senderId, dbState);
+      }
 
       if (
         (intentFinal === 'siguiente' && session.estado[senderId] === 'mostrando_tickets') ||
@@ -241,15 +297,37 @@ const main = async () => {
             delete session.contexto[senderId]
             delete session.conversacionFinalizada[senderId]
           }
+          dbState.currentNode = 'confirmar_envio';
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
           return
         }
 
         const respuestaBot = await BotpressService.enviarMensaje(senderId, mensajeTransformado)
+        
+        // Sincronizar estado con Botpress si se recibieron variables de sesión
+        if (respuestaBot?.estado || respuestaBot?.responses?.[0]?.text) {
+          sincronizarEstadoBotpress(
+            senderId, 
+            respuestaBot.estado, 
+            respuestaBot.responses?.[0]?.text
+          );
+        }
+        
         if (respuestaBot?.responses?.[0]?.text) {
           if (!session.contexto[senderId]) {
             session.contexto[senderId] = {}
           }
           session.contexto[senderId].ultimoMensaje = respuestaBot.responses[0].text
+          dbState.ultimoMensaje = respuestaBot.responses[0].text;
+          
+          // Actualizar estado en base de datos
+          if (session.estado[senderId]) {
+            dbState.currentNode = session.estado[senderId];
+          }
+          
+          await BotSessionService.updateSessionValues(senderId, dbState);
+          await BotSessionService.updateLastInteraction(senderId);
         }
 
         if (respuestaBot?.responses?.length > 0) {
