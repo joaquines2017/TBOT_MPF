@@ -14,8 +14,8 @@ import fetch from 'node-fetch'
 import chalk from 'chalk'
 
 //const BOTPRESS_URL = 'http://botpress:3000'
-const BOTPRESS_URL = 'http://localhost:3000'
-const BOT_ID = 'tbotv2' // ⚠️ Verificá que este sea el nombre exacto de tu bot en Botpress CE
+const BOTPRESS_URL = 'http://backend:3000'
+const BOT_ID = 'tbot' // ⚠️ Verificá que este sea el nombre exacto de tu bot en Botpress CE
 
 interface BotpressResponse {
   responses?: Array<{

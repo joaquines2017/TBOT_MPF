@@ -26,7 +26,7 @@ console.log('DB_USER:', process.env.DB_USER)
 console.log('DB_PASS:', process.env.DB_PASS ? '***' : 'undefined')
 console.log('DB_NAME:', process.env.DB_NAME)
 
-const PORT = process.env.PORT ?? 3009
+const PORT = process.env.PORT ?? 3008
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const mainFlow = createFlow([])
