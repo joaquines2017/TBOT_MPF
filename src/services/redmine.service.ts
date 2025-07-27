@@ -507,6 +507,149 @@ const RedmineService = {
     } catch (error: any) {
       console.error(chalk.red('❌ Error al obtener datos:'), error.response?.data || error)
     }
+  },
+
+  /**
+   * Obtiene información detallada de un usuario por su ID
+   */
+  async getUserById(userId: number) {
+    const api = getApi()
+    try {
+      const response = await api.get(`/users/${userId}.json`)
+      return response.data.user
+    } catch (error: any) {
+      console.error(chalk.red(`❌ Error al obtener usuario ${userId}:`), error.response?.data || error.message)
+      throw error
+    }
+  },
+
+  /**
+   * Busca el teléfono de un técnico en sus campos personalizados de Redmine
+   */
+  async getTechnicianPhone(userId: number): Promise<string | null> {
+    try {
+      // Obtener información detallada del usuario incluyendo campos personalizados
+      const api = getApi()
+      const response = await api.get(`/users/${userId}.json`, {
+        params: {
+          include: 'custom_fields'
+        }
+      })
+      
+      const user = response.data.user
+      console.log(chalk.blue(`🔍 Buscando teléfono para técnico: ${user.firstname} ${user.lastname} (ID: ${userId})`))
+      
+      // Buscar en los campos personalizados del usuario
+      if (user.custom_fields && Array.isArray(user.custom_fields)) {
+        for (const field of user.custom_fields) {
+          // Buscar campos que puedan contener teléfono
+          const fieldName = field.name?.toLowerCase() || ''
+          if ((fieldName.includes('telefono') || 
+               fieldName.includes('teléfono') || 
+               fieldName.includes('phone') || 
+               fieldName.includes('celular') || 
+               fieldName.includes('móvil') || 
+               fieldName.includes('movil') ||
+               fieldName.includes('whatsapp')) && field.value) {
+            
+            console.log(chalk.green(`📞 Teléfono encontrado en campo "${field.name}": ${field.value}`))
+            // Limpiar el número (mantener solo dígitos y el signo +)
+            let cleanPhone = field.value.replace(/[^\d+]/g, '')
+            
+            // Asegurar formato argentino
+            if (cleanPhone.startsWith('0')) {
+              cleanPhone = '+549' + cleanPhone.substring(1)
+            } else if (cleanPhone.startsWith('549')) {
+              cleanPhone = '+' + cleanPhone
+            } else if (!cleanPhone.startsWith('+')) {
+              cleanPhone = '+549' + cleanPhone
+            }
+            
+            return cleanPhone
+          }
+        }
+      }
+      
+      // Si no se encuentra en campos personalizados, buscar en el campo email por si tiene formato de WhatsApp
+      if (user.mail && user.mail.includes('whatsapp')) {
+        console.log(chalk.yellow(`📧 Revisando email para WhatsApp: ${user.mail}`))
+        // Extraer número del email si tiene formato como "5493815142328@whatsapp.com"
+        const phoneMatch = user.mail.match(/(\d+)@/)
+        if (phoneMatch) {
+          let phone = phoneMatch[1]
+          if (!phone.startsWith('+')) {
+            phone = '+' + phone
+          }
+          console.log(chalk.green(`📞 Teléfono extraído del email: ${phone}`))
+          return phone
+        }
+      }
+      
+      console.log(chalk.yellow(`⚠️ No se encontró teléfono para el técnico ${user.firstname} ${user.lastname} (ID: ${userId})`))
+      console.log(chalk.gray(`Campos personalizados disponibles:`, 
+        user.custom_fields?.map((f: any) => `${f.name}: ${f.value || 'vacío'}`)))
+      
+      return null
+    } catch (error: any) {
+      console.error(chalk.red('❌ Error al buscar teléfono del técnico:'), error.response?.data || error.message)
+      return null
+    }
+  },
+
+  /**
+   * Obtiene tickets asignados a un técnico específico
+   */
+  async getTicketsByAssignee(assigneeId: number, statusFilter?: string) {
+    const api = getApi()
+    try {
+      let url = `/issues.json?assigned_to_id=${assigneeId}&limit=100`
+      if (statusFilter) {
+        url += `&status_id=${statusFilter}`
+      }
+      
+      const response = await api.get(url)
+      return response.data.issues
+    } catch (error: any) {
+      console.error(chalk.red(`❌ Error al obtener tickets del técnico ${assigneeId}:`), error.response?.data || error.message)
+      throw error
+    }
+  },
+
+  /**
+   * Obtiene tickets nuevos (creados en los últimos X minutos)
+   */
+  async getNewTicketsByAssignee(assigneeId: number, minutesAgo: number = 5) {
+    try {
+      const cutoffTime = new Date(Date.now() - minutesAgo * 60 * 1000)
+      const tickets = await this.getTicketsByAssignee(assigneeId)
+      
+      return tickets.filter((ticket: any) => {
+        const createdAt = new Date(ticket.created_on)
+        return createdAt >= cutoffTime
+      })
+    } catch (error: any) {
+      console.error(chalk.red('❌ Error al obtener tickets nuevos:'), error.message)
+      return []
+    }
+  },
+
+  /**
+   * Obtiene tickets que cambiaron de estado en los últimos X minutos
+   */
+  async getUpdatedTicketsByAssignee(assigneeId: number, minutesAgo: number = 5) {
+    try {
+      const cutoffTime = new Date(Date.now() - minutesAgo * 60 * 1000)
+      const tickets = await this.getTicketsByAssignee(assigneeId)
+      
+      return tickets.filter((ticket: any) => {
+        const updatedAt = new Date(ticket.updated_on)
+        const createdAt = new Date(ticket.created_on)
+        return updatedAt >= cutoffTime && updatedAt > createdAt
+      })
+    } catch (error: any) {
+      console.error(chalk.red('❌ Error al obtener tickets actualizados:'), error.message)
+      return []
+    }
   }
 }
 

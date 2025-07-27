@@ -12,6 +12,7 @@ import { handleTicketFlow, session, limpiarEstado } from './flow/ticket.flow'
 import RedmineService from './services/redmine.service'
 import { handleIncomingMessage, sincronizarEstadoBotpress } from './controllers/intentMapper.controller'
 import DataService from './services/data.service'
+import { TechnicianNotificationService } from './services/technicianNotification.service'
 
 // Configurar dotenv ANTES de usar process.env
 console.log('📁 Buscando .env en:', path.join(process.cwd(), '.env'))
@@ -48,6 +49,18 @@ const main = async () => {
     database: adapterDB,
   })
 
+  // 🤖 INICIALIZAR SISTEMA DE NOTIFICACIONES PARA TÉCNICOS
+  const technicianNotificationService = new TechnicianNotificationService(RedmineService, adapterProvider)
+
+  // Iniciar monitoreo automático cuando WhatsApp esté conectado
+  adapterProvider.on('ready', () => {
+    console.log('✅ WhatsApp conectado - Iniciando sistema de notificaciones para técnicos...')
+    
+    // Iniciar monitoreo cada 10 minutos
+    technicianNotificationService.startGlobalMonitoring(10)
+    
+    console.log('🔔 Sistema de notificaciones para técnicos activado')
+  })
 
   // Helpers y constantes deben estar dentro de main para el scope correcto
   const simulateTyping = async (provider: any, to: string, durationMs: number = 1000) => {
@@ -87,6 +100,47 @@ const main = async () => {
       const senderId = ctx.from
       const mensajeTexto = ctx.body.trim().toLowerCase()
 
+      // 🧪 COMANDOS DE PRUEBA PARA WHATSAPP
+      if (mensajeTexto === 'test-send') {
+        console.log('🧪 Comando de prueba detectado - enviando mensaje al número de prueba...')
+        try {
+          const testPhone = '5493815142328'  // Número actualizado para prueba
+          const testMessage = 'hola - mensaje de prueba desde T-BOT'
+          
+          console.log(`📱 Enviando a: ${testPhone}`)
+          await adapterProvider.sendMessage(testPhone, testMessage, {})
+          
+          await sendMessageSafely(adapterProvider, senderId, '✅ Mensaje de prueba enviado al número especificado')
+          console.log('✅ Mensaje de prueba enviado exitosamente')
+        } catch (error: any) {
+          console.error('❌ Error enviando mensaje de prueba:', error.message)
+          await sendMessageSafely(adapterProvider, senderId, '❌ Error al enviar mensaje de prueba')
+        }
+        return
+      }
+
+      if (mensajeTexto === 'test-notification') {
+        console.log('🧪 Probando notificación de ticket...')
+        try {
+          const technicians = await RedmineService.obtenerMiembrosSoporteIT()
+          
+          if (technicians.length > 0) {
+            const techTest = technicians[0]
+            console.log(`👤 Usando técnico: ${techTest.name} (ID: ${techTest.id})`)
+            
+            await technicianNotificationService.notifyTicketAssigned(99999, techTest.id)
+            
+            await sendMessageSafely(adapterProvider, senderId, `✅ Prueba de notificación enviada a ${techTest.name}`)
+          } else {
+            await sendMessageSafely(adapterProvider, senderId, '❌ No se encontraron técnicos para la prueba')
+          }
+        } catch (error: any) {
+          console.error('❌ Error en prueba de notificación:', error.message)
+          await sendMessageSafely(adapterProvider, senderId, '❌ Error en prueba de notificación')
+        }
+        return
+      }
+
       // --- SESIÓN PERSISTENTE EN BASE DE DATOS ---
       // 1. Crear/actualizar contacto
       await DataService.getOrCreateContact(senderId);
@@ -105,7 +159,7 @@ const main = async () => {
       try {
         // 1. Calificación siempre primero: BuilderBot debe capturarla antes que cualquier otro flujo
         if (session.estado[senderId] === 'esperando_calificacion') {
-          const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, session.contexto[senderId] || {})
+          const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, session.contexto[senderId] || {}, adapterProvider, technicianNotificationService)
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
@@ -148,7 +202,7 @@ const main = async () => {
 
         // 3. Cancelar ticket
         if (session.estado[senderId] === 'esperando_id_cancelar' && /^\d+$/.test(mensajeTexto)) {
-          const respuestaTicket = await handleTicketFlow(senderId, `cancelar_${mensajeTexto}`, {})
+          const respuestaTicket = await handleTicketFlow(senderId, `cancelar_${mensajeTexto}`, {}, adapterProvider, technicianNotificationService)
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
@@ -161,7 +215,7 @@ const main = async () => {
 
         // 4. Consultar ticket
         if (session.estado[senderId] === 'esperando_id_consulta' && /^\d+$/.test(mensajeTexto)) {
-          const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, {})
+          const respuestaTicket = await handleTicketFlow(senderId, mensajeTexto, {}, adapterProvider, technicianNotificationService)
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
           if (session.conversacionFinalizada[senderId]) {
             limpiarEstado(senderId)
@@ -175,7 +229,7 @@ const main = async () => {
         // 5. Confirmar generación de ticket
         if ((mensajeTexto === 'si' || mensajeTexto === '1') && 
             session.contexto[senderId]?.ultimoMensaje?.includes('¿Deseás generar el ticket?')) {
-          const respuestaTicket = await handleTicketFlow(senderId, 'si', session.contexto[senderId])
+          const respuestaTicket = await handleTicketFlow(senderId, 'si', session.contexto[senderId], adapterProvider, technicianNotificationService)
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
           if (session.conversacionFinalizada[senderId]) {
             delete session.estado[senderId]
@@ -194,7 +248,7 @@ const main = async () => {
       // Si el usuario responde '3' en los estados de tickets, BuilderBot debe capturar y NO pasar a Botpress
       if ((mensajeTexto === '3') && (session.estado[senderId] === 'mostrando_tickets' || session.estado[senderId] === 'paginando_tickets')) {
         console.log('🚫 [DEBUG] Opción 3=Salir capturada por BuilderBot. Estado:', session.estado[senderId]);
-        const respuestaTicket = await handleTicketFlow(senderId, '3', session.contexto[senderId] || {});
+        const respuestaTicket = await handleTicketFlow(senderId, '3', session.contexto[senderId] || {}, adapterProvider, technicianNotificationService);
         await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
         if (session.conversacionFinalizada[senderId]) {
           limpiarEstado(senderId);
@@ -206,7 +260,7 @@ const main = async () => {
       if (session.contexto[senderId]?.ultimoMensaje?.includes('Elija el estado de los tickets') && (mensajeTexto === '1' || mensajeTexto === '2')) {
         const intentEstado = mensajeTexto === '1' ? 'nuevo' : 'en_proceso';
         console.log('🔄 Capturado por BuilderBot:', { original: mensajeTexto, transformado: intentEstado });
-        const respuestaTicket = await handleTicketFlow(senderId, intentEstado, session.contexto[senderId] || {});
+        const respuestaTicket = await handleTicketFlow(senderId, intentEstado, session.contexto[senderId] || {}, adapterProvider, technicianNotificationService);
         await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
         if (session.conversacionFinalizada[senderId]) {
           limpiarEstado(senderId);
@@ -230,7 +284,7 @@ const main = async () => {
         (intentFinal === 'siguiente' && session.estado[senderId] === 'mostrando_tickets') ||
         (intentFinal === 'salir' && session.estado[senderId] === 'mostrando_tickets')
       ) {
-        const respuestaTicket = await handleTicketFlow(senderId, intentFinal, session.contexto[senderId] || {});
+        const respuestaTicket = await handleTicketFlow(senderId, intentFinal, session.contexto[senderId] || {}, adapterProvider, technicianNotificationService);
         await sendMessageSafely(adapterProvider, senderId, respuestaTicket);
         if (session.conversacionFinalizada[senderId]) {
           limpiarEstado(senderId);
@@ -239,7 +293,7 @@ const main = async () => {
       }
 
         if (session.estado[senderId] === 'nodo_confirmar_envio' && mensajeTransformado === 'si') {
-          const respuestaTicket = await handleTicketFlow(senderId, mensajeTransformado, session.contexto[senderId])
+          const respuestaTicket = await handleTicketFlow(senderId, mensajeTransformado, session.contexto[senderId], adapterProvider, technicianNotificationService)
           await sendMessageSafely(adapterProvider, senderId, respuestaTicket)
           if (session.conversacionFinalizada[senderId]) {
             delete session.estado[senderId]
@@ -343,6 +397,10 @@ const main = async () => {
             return res.end(JSON.stringify({ status: 'ok', number, intent }))
         })
     )
+
+    console.log('🧪 Para probar el envío de WhatsApp, envía "test-send" al bot')
+    console.log('🧪 Para probar notificaciones de técnicos, envía "test-notification" al bot')
+    console.log('🔔 Sistema de notificaciones automáticas: ACTIVADO')
 
     httpServer(+PORT)
 }

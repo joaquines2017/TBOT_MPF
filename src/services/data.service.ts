@@ -106,4 +106,15 @@ export default class DataService {
       throw error;
     }
   }
+
+  // Obtener todos los contactos (para buscar técnicos)
+  static async obtenerTodosLosContactos() {
+    try {
+      const contacts = await Contact.findAll();
+      return contacts;
+    } catch (error) {
+      console.error('❌ Error al obtener contactos:', error);
+      throw error;
+    }
+  }
 }

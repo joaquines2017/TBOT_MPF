@@ -6,6 +6,7 @@
  * @param _senderId - Identificador único del usuario que envía la solicitud.
  * @param intent - Intención detectada del usuario (por ejemplo: 'consultar', 'cancelar_123', 'si', 'ver_todos').
  * @param contexto - Objeto que contiene información contextual relevante de la conversación actual.
+ * @param technicianNotificationService - Servicio para notificaciones a técnicos (opcional).
  * @returns Una promesa que resuelve en un string con el mensaje de respuesta para el usuario.
  *
  * @remarks
@@ -13,9 +14,11 @@
  * - Realiza validaciones sobre los datos recibidos y maneja errores devolviendo mensajes apropiados.
  * - Interactúa con el servicio de Redmine para operaciones CRUD sobre tickets.
  * - Soporta paginación para la visualización de múltiples tickets.
+ * - Envía notificaciones automáticas a técnicos cuando se asignan tickets.
  */
 
 import RedmineService from '../services/redmine.service'
+import { TechnicianNotificationService } from '../services/technicianNotification.service'
 
 interface SessionData {
   estado: Record<string, string>
@@ -110,7 +113,9 @@ const crearTicket = async (_senderId: string, contexto: any) => {
     `${contacto.first_name} ${contacto.last_name}` : 
     'Usuario WhatsApp'
   
-  const oficinaEmpleado = contacto?.company || 'No especificada'
+  // Para la oficina, usar valor vacío si no se encuentra el contacto
+  // Esto evita el error de validación en Redmine
+  const oficinaEmpleado = contacto?.company || ''
 
   const ticketPayload = {
     project_id: 33,
@@ -121,10 +126,11 @@ const crearTicket = async (_senderId: string, contexto: any) => {
     description: `📋 Ticket generado vía T-BOT WhatsApp\n\n${contexto.ultimoMensaje}`,
     assigned_to_id: miembro.id,
     custom_fields: [
-      {
+      // Solo incluir campo de oficina si hay un valor válido
+      ...(oficinaEmpleado ? [{
         id: 7,
         value: oficinaEmpleado
-      },
+      }] : []),
       {
         id: 4,
         value: nombreEmpleado
@@ -140,7 +146,13 @@ const crearTicket = async (_senderId: string, contexto: any) => {
   return await RedmineService.createTicket(ticketPayload)
 }
 
-export const handleTicketFlow = async (_senderId: string, intent: string, contexto: any): Promise<string> => {
+export const handleTicketFlow = async (
+  _senderId: string, 
+  intent: string, 
+  contexto: any, 
+  provider?: any,
+  technicianNotificationService?: TechnicianNotificationService
+): Promise<string> => {
 
     // --- Lógica restaurada para navegación y filtrado de tickets ---
     // 1. Si el estado es mostrando_tickets, procesar selección de estado
@@ -234,6 +246,20 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
       const ticket = await crearTicket(_senderId, contexto)
       if (!ticket) {
         throw new Error('Error al crear el ticket en Redmine')
+      }
+
+      // 🚨 NUEVA FUNCIONALIDAD: Notificar al técnico asignado
+      if (ticket.assigned_to?.id && technicianNotificationService) {
+        try {
+          await technicianNotificationService.notifyTicketAssigned(
+            ticket.id, 
+            ticket.assigned_to.id
+          )
+          console.log(`✅ Notificación enviada al técnico ${ticket.assigned_to.id} para ticket #${ticket.id}`)
+        } catch (error: any) {
+          console.error(`⚠️ Error al notificar técnico:`, error.message)
+          // No fallar el flujo por error de notificación
+        }
       }
 
       session.estado[_senderId] = 'esperando_calificacion'
@@ -342,7 +368,9 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
         `${contacto.first_name} ${contacto.last_name}` : 
         'Usuario WhatsApp'
       
-      const oficinaEmpleado = contacto?.company || 'No especificada'
+      // Para la oficina, usar valor vacío si no se encuentra el contacto
+      // Esto evita el error de validación en Redmine
+      const oficinaEmpleado = contacto?.company || ''
 
       const ticketPayload = {
         project_id: 33,
@@ -353,10 +381,11 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
         description: `📋 Ticket generado vía T-BOT WhatsApp\n\n${contexto.ultimoMensaje}`,
         assigned_to_id: miembro.id,
         custom_fields: [
-          {
+          // Solo incluir campo de oficina si hay un valor válido
+          ...(oficinaEmpleado ? [{
             id: 7,
             value: oficinaEmpleado
-          },
+          }] : []),
           {
             id: 4,
             value: nombreEmpleado
@@ -373,6 +402,20 @@ export const handleTicketFlow = async (_senderId: string, intent: string, contex
       
       if (!ticket) {
         throw new Error('Error al crear el ticket en Redmine')
+      }
+
+      // 🚨 NUEVA FUNCIONALIDAD: Notificar al técnico asignado
+      if (ticket.assigned_to?.id && technicianNotificationService) {
+        try {
+          await technicianNotificationService.notifyTicketAssigned(
+            ticket.id, 
+            ticket.assigned_to.id
+          )
+          console.log(`✅ Notificación enviada al técnico ID: ${ticket.assigned_to.id}`)
+        } catch (error: any) {
+          console.error('⚠️ Error al enviar notificación al técnico:', error.message)
+          // No interrumpir el flujo principal si falla la notificación
+        }
       }
 
       session.conversacionFinalizada[_senderId] = true
